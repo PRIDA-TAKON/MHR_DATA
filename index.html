@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard สถิติการขาดประชุม สภาผู้แทนราษฎร ชุดที่ 26</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Sarabun', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        <!-- Header -->
+        <header class="bg-white rounded-xl shadow-sm p-6 border-b-4 border-blue-600">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-slate-800">📊 สถิติการขาด/ลาประชุมรายพรรค</h1>
+                    <p class="text-slate-500 mt-1">วิเคราะห์ข้อมูลจาก Google Sheet สาธารณะ (สภาผู้แทนราษฎร ชุดที่ 26)</p>
+                </div>
+                <div class="text-right">
+                    <span id="statusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">
+                        กำลังเชื่อมต่อข้อมูล...
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-slate-500 text-sm font-medium uppercase tracking-wider">พรรคที่ขาดประชุมเฉลี่ยสูงสุด</h3>
+                <div class="flex items-baseline gap-2 mt-2">
+                    <p class="text-3xl font-bold text-slate-800" id="highestAvgParty">-</p>
+                    <p class="text-lg font-semibold text-red-500" id="highestAvgValue">0%</p>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">เฉลี่ยจากการลงมติทุกครั้ง</p>
+            </div>
+            
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-slate-500 text-sm font-medium uppercase tracking-wider">สถิติ "เท" สูงสุดใน 1 ครั้ง</h3>
+                <div class="flex items-baseline gap-2 mt-2">
+                    <p class="text-3xl font-bold text-slate-800" id="highestMaxParty">-</p>
+                    <p class="text-lg font-semibold text-orange-500" id="highestMaxValue">0%</p>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">คือ % การขาดที่สูงที่สุดที่เคยเกิดขึ้นในมติเดียว</p>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-slate-500 text-sm font-medium uppercase tracking-wider">ฐานข้อมูล</h3>
+                <div class="flex items-baseline gap-2 mt-2">
+                    <p class="text-3xl font-bold text-slate-800" id="totalVotes">-</p>
+                    <span class="text-slate-500">มติ</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-1">จำนวนวาระที่นำมาคำนวณ</p>
+            </div>
+        </div>
+
+        <!-- Main Chart -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold text-slate-800">📉 กราฟเปรียบเทียบพฤติกรรมการเข้าประชุม</h2>
+                <div class="flex gap-4 text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-blue-500"></span>
+                        <span>ค่าเฉลี่ย</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-red-400"></span>
+                        <span>สูงสุดที่เคยทำ</span>
+                    </div>
+                </div>
+            </div>
+            <div class="relative h-96 w-full">
+                <canvas id="absenceChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                <h2 class="text-lg font-semibold text-slate-800">ตารางอันดับ (เรียงตามค่าเฉลี่ยการขาด)</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-100 text-slate-700 uppercase font-semibold text-xs tracking-wider">
+                        <tr>
+                            <th class="px-6 py-4 rounded-tl-lg">อันดับ</th>
+                            <th class="px-6 py-4">พรรค</th>
+                            <th class="px-6 py-4 text-center">ขาด/ลา เฉลี่ย (%)</th>
+                            <th class="px-6 py-4 text-center">ขาด/ลา สูงสุด (%)</th>
+                            <th class="px-6 py-4 text-right rounded-tr-lg">จำนวนครั้งที่ลงมติ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-100">
+                        <!-- Rows will be populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <footer class="text-center text-slate-400 text-sm py-8">
+            <p>Generated Dashboard | Data Source: Parliament Watch Sheet (Read-Only Mode)</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const SHEET_ID = '1HxHsCAc_2j-nHvmLx_XF5Je49gidRRoRtJ7NwCNURpA';
+        const GID = '706401250'; 
+        
+        // --- CALLBACK FUNCTION FOR JSONP ---
+        // ฟังก์ชันนี้จะถูกเรียกอัตโนมัติเมื่อ Script โหลดเสร็จ
+        window.handleSheetData = function(json) {
+            console.log("Data received from Google Sheets");
+            const statusBadge = document.getElementById('statusBadge');
+            
+            try {
+                if (!json || !json.table || !json.table.rows) {
+                    throw new Error("Invalid data format");
+                }
+
+                statusBadge.innerText = "อัปเดตล่าสุด: " + new Date().toLocaleDateString('th-TH');
+                statusBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800";
+                
+                const stats = processSheetData(json.table.rows);
+                renderDashboard(stats);
+
+            } catch (error) {
+                console.error('Error processing data:', error);
+                statusBadge.innerText = "เกิดข้อผิดพลาดในการประมวลผล";
+                statusBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800";
+                
+                // Show Error UI in grid
+                document.querySelector('.grid').innerHTML = `
+                    <div class="col-span-3 text-center p-12 bg-red-50 rounded-xl border border-red-100">
+                        <h3 class="text-red-800 font-bold text-lg">โครงสร้างข้อมูลไม่ถูกต้อง</h3>
+                        <p class="text-red-600 mt-2">Google Sheet อาจมีการเปลี่ยนชื่อคอลัมน์หรือตำแหน่ง</p>
+                    </div>
+                `;
+            }
+        };
+
+        // --- DATA INJECTION (JSONP) ---
+        function loadGoogleSheetData() {
+            const statusBadge = document.getElementById('statusBadge');
+            
+            // ใช้เทคนิคสร้าง Script Tag เพื่อหลบ CORS issue
+            // กำหนด responseHandler:handleSheetData เพื่อให้ Google ส่งข้อมูลกลับเข้าฟังก์ชันเรา
+            const script = document.createElement('script');
+            script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=responseHandler:handleSheetData&tq&gid=${GID}`;
+            script.onerror = function() {
+                statusBadge.innerText = "เชื่อมต่อ Google Sheet ไม่ได้";
+                statusBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800";
+            };
+            document.body.appendChild(script);
+        }
+
+        // --- PROCESSING LOGIC ---
+        function processSheetData(rows) {
+            const partyStats = {};
+
+            rows.forEach(row => {
+                // ตรวจสอบว่ามีข้อมูลในแถวไหม
+                if (!row.c) return;
+
+                // Index Mapping (ปรับตามชีทจริง):
+                // c[4] = party
+                // c[5]=agree, c[6]=disagree, c[7]=pm1, c[8]=pm2, c[9]=abstain, c[10]=no_vote, c[11]=absent
+                
+                const getVal = (idx) => (row.c[idx] && row.c[idx].v !== null) ? parseFloat(row.c[idx].v) : 0;
+                const getString = (idx) => (row.c[idx] && row.c[idx].v) ? String(row.c[idx].v).trim() : null;
+
+                const party = getString(4);
+                if (!party || party === '-' || party === 'พรรค') return; // Skip Header or empty
+
+                const agree = getVal(5);
+                const disagree = getVal(6);
+                const pm1 = getVal(7);
+                const pm2 = getVal(8);
+                const abstain = getVal(9);
+                const no_vote = getVal(10);
+                const absent = getVal(11);
+
+                const totalMembers = agree + disagree + pm1 + pm2 + abstain + no_vote + absent;
+
+                if (totalMembers === 0) return;
+
+                const absentPercent = (absent / totalMembers) * 100;
+
+                if (!partyStats[party]) {
+                    partyStats[party] = {
+                        totalPercent: 0,
+                        maxPercent: 0,
+                        count: 0
+                    };
+                }
+
+                partyStats[party].totalPercent += absentPercent;
+                partyStats[party].count += 1;
+
+                if (absentPercent > partyStats[party].maxPercent) {
+                    partyStats[party].maxPercent = absentPercent;
+                }
+            });
+
+            let results = Object.keys(partyStats).map(party => ({
+                party: party,
+                avgPercent: partyStats[party].totalPercent / partyStats[party].count,
+                maxPercent: partyStats[party].maxPercent,
+                voteCount: partyStats[party].count
+            }));
+
+            // กรองข้อมูลขยะออก
+            results = results.filter(r => r.party !== '-' && r.party !== '');
+            return results.sort((a, b) => b.avgPercent - a.avgPercent);
+        }
+
+        // --- RENDER LOGIC ---
+        function renderDashboard(stats) {
+            // Update Text Stats
+            const totalVotes = stats.length > 0 ? stats[0].voteCount : 0;
+            document.getElementById('totalVotes').innerText = totalVotes;
+            
+            if (stats.length > 0) {
+                document.getElementById('highestAvgParty').innerText = stats[0].party;
+                document.getElementById('highestAvgValue').innerText = stats[0].avgPercent.toFixed(1) + '%';
+
+                const maxSpikeParty = [...stats].sort((a, b) => b.maxPercent - a.maxPercent)[0];
+                document.getElementById('highestMaxParty').innerText = maxSpikeParty.party;
+                document.getElementById('highestMaxValue').innerText = maxSpikeParty.maxPercent.toFixed(1) + '%';
+            }
+
+            // Render Chart
+            const ctx = document.getElementById('absenceChart').getContext('2d');
+            const chartStats = stats.slice(0, 15); // Top 15
+
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartStats.map(s => s.party),
+                    datasets: [
+                        {
+                            label: 'สูงสุดที่เคยทำ (%)',
+                            data: chartStats.map(s => s.maxPercent),
+                            type: 'line',
+                            borderColor: '#ef4444',
+                            borderWidth: 2,
+                            pointBackgroundColor: '#ef4444',
+                            fill: false,
+                            order: 0
+                        },
+                        {
+                            label: 'ค่าเฉลี่ยขาด/ลา (%)',
+                            data: chartStats.map(s => s.avgPercent),
+                            backgroundColor: '#3b82f6',
+                            borderRadius: 4,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', align: 'end' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.raw.toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: 'เปอร์เซ็นต์ (%)' }
+                        }
+                    }
+                }
+            });
+
+            // Render Table
+            document.getElementById('tableBody').innerHTML = stats.map((s, index) => `
+                <tr class="hover:bg-blue-50/50 transition-colors">
+                    <td class="px-6 py-4 font-medium text-slate-400">#${index + 1}</td>
+                    <td class="px-6 py-4 font-semibold text-slate-800">${s.party}</td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="inline-block px-2.5 py-1 rounded-md text-sm font-bold ${
+                            s.avgPercent > 20 ? 'bg-red-100 text-red-700' : 
+                            (s.avgPercent > 10 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700')
+                        }">
+                            ${s.avgPercent.toFixed(1)}%
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-center text-slate-500">${s.maxPercent.toFixed(1)}%</td>
+                    <td class="px-6 py-4 text-right text-slate-400 font-mono text-xs">${s.voteCount} ครั้ง</td>
+                </tr>
+            `).join('');
+        }
+
+        // Start
+        loadGoogleSheetData();
+    </script>
+</body>
+</html>
